@@ -1,19 +1,31 @@
 import logging
 from logging.handlers import RotatingFileHandler
+
+import redis
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_migrate import Migrate
-from config import Config
+
+from config import Config_is
 
 db = SQLAlchemy()
 migrate = Migrate()
 
+redis_obj = redis.StrictRedis.from_url(Config_is.REDIS_URL, decode_responses=True)
+
+app = None
+
 
 def create_app(config_class=Config):
+    global app
+    if app:
+        return app
     app = Flask(__name__, template_folder='templates')
     CORS(app)
     app.config.from_object(config_class)
+    app.config['SQLALCHEMY_POOL_RECYCLE'] = 1200
+    app.config['SQLALCHEMY_POOL_PRE_PING'] = True
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -23,6 +35,13 @@ def create_app(config_class=Config):
     logging.basicConfig(handlers=[file_handler], level=logging.DEBUG)
     logging.getLogger('log_data.log')
     app.logger.addHandler(file_handler)
+
+    @app.teardown_request
+    def teardown_request(exception=None):
+        if db is not None:
+            db.session.close()
+            db.engine.dispose()
+
     from app.api import bp as api_bp
     app.register_blueprint(api_bp, url_prefix='/v1')
 

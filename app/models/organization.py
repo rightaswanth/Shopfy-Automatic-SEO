@@ -9,9 +9,9 @@ from .base import BaseModel
 class Organization(BaseModel):
     """Table for defining the organization details"""
     __tablename__ = "organization"
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, index=True)
     name = db.Column(db.String(120), nullable=False, unique=True)
-    domain = db.Column(db.String(40), nullable=False, unique=True)
+    domain = db.Column(db.String(40), nullable=False, unique=True, index=True)
     services = db.Column(db.Text, default=json.dumps([]))
     members = db.relationship("User", backref="organization_users", lazy=True)
 

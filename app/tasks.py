@@ -5,10 +5,12 @@ from config import Config
 from datetime import datetime, timedelta
 from app import db
 from app.models.time_zone import TimeZone
-from app.services.crud import CRUD 
+from app.services.crud import CRUD
+
 app = create_app()
 app.app_context().push()
 app = Celery('tasks', broker=Config.AMQP)
+
 crud = CRUD()
 
 BROKER_CONNECTION_RETRY = True  # will make it retry whenever it fails
@@ -25,6 +27,7 @@ app.conf.beat_schedule = {
 }
 app.conf.timezone = 'UTC'
 
+
 @app.task
 def background_job_one(region: str, org_id: int, stored_resources: dict):
     return True
@@ -39,6 +42,7 @@ def second_function():
 @app.task
 def job_three(**kwargs):
     return True
+
 
 @app.task
 def start_processing():

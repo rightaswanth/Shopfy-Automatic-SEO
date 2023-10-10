@@ -6,12 +6,11 @@ from flask_httpauth import HTTPBasicAuth
 from itsdangerous import URLSafeTimedSerializer
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from app import db
+from app import db, redis_obj
 from .base import BaseModel
 from config import Config_is
 
 auth = HTTPBasicAuth()
-redis_obj = redis.StrictRedis.from_url(Config_is.REDIS_URL, decode_responses=True)
 
 
 class User(BaseModel):
@@ -81,23 +80,37 @@ class User(BaseModel):
         )
         return data
 
-    def get_hashed_password(self, password):
+    @staticmethod
+    def get_hashed_password(password: str):
+        """
+        Hash the password
+        """
         return generate_password_hash(password)
 
-    def hash_password(self, password):
+    def hash_password(self, password: str):
         self.hashed_password = generate_password_hash(password)
 
-    def check_password(self, password):
+    def check_password(self, password: str):
+        """
+        Check password with the hashed password
+        """
         return check_password_hash(self.hashed_password, password)
 
-    def generate_auth_token(self, expiration=Config_is.AUTH_TOKEN_EXPIRES):
+    def generate_auth_token(self, expiration: int = Config_is.AUTH_TOKEN_EXPIRES):
+        """
+        Generate user token and store the value in redis
+        """
         s = URLSafeTimedSerializer(Config_is.SECRET_KEY)
-        token = s.dumps({'id': self.id, 'role_id': self.role_id, 'organization_id': self.organization_id})
+        token = s.dumps(
+            {'id': self.id, 'name': self.name, 'role_id': self.role_id, 'email': self.email})
         add_user_token_in_cache(self.id, expiration, token)
         return token
 
     @staticmethod
     def verify_auth_token(token: str, expires_in: int = Config_is.AUTH_TOKEN_EXPIRES):
+        """
+        Verifying the user token valid or not
+        """
         serializer = URLSafeTimedSerializer(Config_is.SECRET_KEY)
         try:
             data = serializer.loads(token, max_age=expires_in)
@@ -109,17 +122,20 @@ class User(BaseModel):
 
 
 def add_user_token_in_cache(user_id: int, expiry_at: int, user_auth_token: str) -> bool:
-    redis_obj.setex(user_id, timedelta(seconds=expiry_at), user_auth_token)
+    redis_obj.setex(f"{user_id}", timedelta(seconds=expiry_at), user_auth_token)
     return True
 
 
 def verify_user_token_in_cache(user_id: int, user_auth_token: str):
-    if redis_obj.get(user_id) == user_auth_token:
+    if redis_obj.get(f"{user_id}") == user_auth_token:
         return True
     return False
 
 
 def remove_user_token(user_id: int, user_auth_token: str = None):
-    if redis_obj.get(user_id) == user_auth_token or not user_auth_token:
-        redis_obj.delete(user_id)
+    """
+    Remove user token from redis
+    """
+    if redis_obj.get(f"{user_id}") == user_auth_token or not user_auth_token:
+        redis_obj.delete(f"{user_id}")
     return True
