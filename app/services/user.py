@@ -7,7 +7,7 @@ from .sendgrid_email import send_email
 from .crud import CRUD
 from .custom_errors import (Forbidden, Conflict, InternalError, BadRequest, NoContent)
 from app import db
-from .aws_services import (client_s3, file_upload_obj_s3, delete_s3_object)
+from .aws_services import AmazonServices
 from app.models import User, remove_user_token
 
 crud = CRUD()
@@ -48,24 +48,24 @@ def upload_user_profile_pic(file_is: object, user_obj: object) -> str:
     """
     Upload user avatar and remove if an image already exist
     """
+    amazon = AmazonServices()
     file_extension = file_is.filename.split(".")[-1].upper()
-    s3_client = client_s3()
     if user_obj.avatar:
-        delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}", s3_client=s3_client)
+        amazon.delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}")
     if file_extension not in IMAGE_EXTENSION:
         raise BadRequest("Invalid file extension")
     new_file_name = f"{uuid1().hex}.{file_is.filename.split('.')[-1]}"
-    file_upload_obj_s3(s3_client, file_is, f"{user_obj.organization_id}/avatar/{new_file_name}")
+    amazon.file_upload_obj_s3(file_is, f"{user_obj.organization_id}/avatar/{new_file_name}")
     return new_file_name
 
 
 def user_avatar_uploading(file_is: object = None):
+    amazon = AmazonServices()
     user_obj = User.query.filter_by(id=g.user['id'], organization_id=g.user['organization_id']).first()
     if user_obj.avatar:
-        s3_client = client_s3()
-        delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}", s3_client=s3_client)
+        amazon.delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}")
     if file_is:
-        avatar = upload_user_profile_pic(file_is['file'], user_obj)
+        avatar = amazon.upload_user_profile_pic(file_is['file'], user_obj)
         if avatar:
             user_obj.avatar = avatar
             crud.db_commit()
@@ -77,8 +77,7 @@ def user_avatar_uploading(file_is: object = None):
 def user_avatar_deleting():
     user_obj = User.query.filter_by(id=g.user['id'], organization_id=g.user['organization_id']).first()
     if user_obj.avatar:
-        s3_client = client_s3()
-        delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}", s3_client=s3_client)
+        AmazonServices().delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}")
         crud.db_commit()
     return True
 
@@ -107,6 +106,7 @@ def delete_organization_user(user_id):
     if user_id == g.user['id']:
         raise Forbidden()
     if u:
+        remove_user_token(user_id)
         db.session.delete(u)
         crud.db_commit()
         return True

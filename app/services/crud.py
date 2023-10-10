@@ -1,19 +1,26 @@
 from app import db
-from .custom_errors import NoContent, InternalError, BadRequest
+from app.services.custom_errors import *
+import psycopg2
+from sqlalchemy.exc import IntegrityError
 
-
-class CRUD(object):
+class CRUD():
     def create(self, cls, data):
         try:
             record = cls(**data)
             db.session.add(record)
         except Exception as e:
-            raise BadRequest("Please provide all fields correctly")
+            raise BadRequest(f"Please provide all fields correctly {e}")
         self.db_commit()
         return record
 
     def update(self, cls, condition, data):
-        record = cls.query.filter_by(**condition).update(data)
+        try:
+            record = cls.query.filter_by(**condition).update(data)
+        except IntegrityError as e:
+            db.session.rollback()
+            if 'errors.UniqueViolation':
+                raise UnProcessable("This data already exists")
+            raise UnProcessable()
         if record:
             self.db_commit()
             record = cls.query.filter_by(**condition).first()
@@ -40,16 +47,25 @@ class CRUD(object):
 
     def delete(self, cls, condition):
         records = cls.query.filter_by(**condition).all()
-        for record in records:
-            db.session.delete(record)
+        try:
+            for record in records:
+                db.session.delete(record)
             self.db_commit()
+        except Exception as e:
+            print(f"Crud delete exception {e} {condition} {cls}")
         return True
 
-    def db_commit(self):
+    @staticmethod
+    def db_commit():
         try:
             db.session.commit()
             return True
+        except IntegrityError as e:
+            print(e)
+            db.session.rollback()
+            if 'errors.UniqueViolation':
+                raise UnProcessable("This data already exists")
         except Exception as e:
             print(e)
             db.session.rollback()
-        raise InternalError()
+            raise InternalError()

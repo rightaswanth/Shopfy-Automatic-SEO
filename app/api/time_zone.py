@@ -1,8 +1,9 @@
 from flask import request, g, jsonify
+
 from app.api import bp
 from app.models import TimeZone
 from app.services.crud import CRUD
-from app.services.auth import is_super_admin
+from app.services.auth import admin_authorizer
 from app.api.user import tokenAuth
 
 crud = CRUD()
@@ -10,7 +11,7 @@ crud = CRUD()
 
 @bp.route('/time_zone', methods=["PUT"])
 @tokenAuth.login_required
-@is_super_admin
+@admin_authorizer
 def edit_time_zone():
     crud.update(TimeZone, {"id": 1}, request.json)
     return jsonify({"message": "Successfully updated the time zone", "status": 200}), 200
