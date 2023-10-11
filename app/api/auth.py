@@ -4,7 +4,6 @@ from flask import request, jsonify, g, render_template
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth
 
 from app.api import bp
-from app.services.crud import CRUD
 from app.services.custom_errors import (BadRequest, Unauthorized, InternalError, Forbidden)
 from app.services.sendgrid_email import send_email
 from app.services.auth import AuthService
@@ -14,7 +13,6 @@ from config import Config_is
 auth = HTTPBasicAuth()
 tokenAuth = HTTPTokenAuth(scheme='Token')
 auth_service = AuthService()
-crud = CRUD()
 
 
 @auth.verify_password
