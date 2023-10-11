@@ -6,8 +6,6 @@ from app.services.custom_errors import NoContent, Forbidden, Conflict
 from app.models import User, remove_user_token
 from app.services.user import upload_user_profile_pic
 
-crud = CRUD()
-
 
 class AuthService(object):
     @staticmethod
@@ -34,7 +32,7 @@ class AuthService(object):
             if avatar:
                 data |= avatar
         print(data)
-        crud.update(User, {'id': user_obj.id}, {'registered': True, 'is_active': True, **data})
+        CRUD.update(User, {'id': user_obj.id}, {'registered': True, 'is_active': True, **data})
         remove_user_token(g.user['id'])
         return True
 
@@ -42,7 +40,7 @@ class AuthService(object):
     def new_password(user_id: int, password: str) -> bool:
         user = User.query.get(user_id)
         user.hash_password(password)
-        crud.db_commit()
+        CRUD.db_commit()
         remove_user_token(user_id)
         return True
 
