@@ -5,7 +5,6 @@ from flask import request, jsonify, g
 from app.api import bp
 from app.services.auth import AuthService, admin_authorizer
 from .auth import tokenAuth
-from app.services.crud import CRUD
 from app.services.custom_errors import BadRequest, NoContent, Forbidden
 from app.models import User
 from app.services import adding_new_user, edit_user_details, make_user_active_inactive, sent_email_invitation, \
@@ -13,7 +12,6 @@ from app.services import adding_new_user, edit_user_details, make_user_active_in
 from config import Config_is
 
 auth_service = AuthService()
-crud = CRUD()
 
 
 @bp.route('/user', methods=['POST'])
