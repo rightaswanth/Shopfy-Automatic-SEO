@@ -1,58 +1,64 @@
-from app import db
-from app.services.custom_errors import *
-import psycopg2
 from sqlalchemy.exc import IntegrityError
 
-class CRUD():
-    def create(self, cls, data):
+from app import db
+from app.services.custom_errors import *
+
+
+class CRUD:
+    @classmethod
+    def create(cls, model_is, data):
         try:
-            record = cls(**data)
+            record = model_is(**data)
             db.session.add(record)
         except Exception as e:
             raise BadRequest(f"Please provide all fields correctly {e}")
-        self.db_commit()
+        cls.db_commit()
         return record
-
-    def update(self, cls, condition, data):
+    
+    @classmethod
+    def update(cls, model_is, condition, data):
         try:
-            record = cls.query.filter_by(**condition).update(data)
+            record = model_is.query.filter_by(**condition).update(data)
         except IntegrityError as e:
             db.session.rollback()
             if 'errors.UniqueViolation':
                 raise UnProcessable("This data already exists")
             raise UnProcessable()
         if record:
-            self.db_commit()
-            record = cls.query.filter_by(**condition).first()
-            return record
+            cls.db_commit()
+            return True
         raise NoContent()
 
-    def create_if_not(self, cls, condition, data):
-        record = cls.query.filter_by(**condition).first()
+    @classmethod
+    def create_if_not(cls, model_is, condition, data):
+        record = model_is.query.filter_by(**condition).first()
         if not record:
-            return self.create(cls, data)
+            return cls.create(model_is, data)
         return record
 
-    def create_or_update(self, cls, condition, data):
-        record = cls.query.filter_by(**condition).first()
+    @classmethod
+    def create_or_update(cls, model_is, condition, data):
+        record = model_is.query.filter_by(**condition).first()
         if not record:
-            return self.create(cls, data)
-        return self.update(cls, condition, data)
+            return cls.create(cls, data)
+        return cls.update(cls, condition, data)
 
-    def bulk_insertion(self, cls, data):
+    @classmethod
+    def bulk_insertion(cls, model_is, data):
         for record in data:
-            i = cls(**record)
+            i = model_is(**record)
             db.session.add(i)
-        self.db_commit()
+        cls.db_commit()
 
-    def delete(self, cls, condition):
-        records = cls.query.filter_by(**condition).all()
+    @classmethod
+    def delete(cls, model_is, condition):
+        records = model_is.query.filter_by(**condition).all()
         try:
             for record in records:
                 db.session.delete(record)
-            self.db_commit()
+            cls.db_commit()
         except Exception as e:
-            print(f"Crud delete exception {e} {condition} {cls}")
+            print(f"Crud delete exception {e} {condition} {model_is}")
         return True
 
     @staticmethod
