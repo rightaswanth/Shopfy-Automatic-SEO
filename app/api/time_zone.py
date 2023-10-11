@@ -6,14 +6,12 @@ from app.services.crud import CRUD
 from app.services.auth import admin_authorizer
 from app.api.user import tokenAuth
 
-crud = CRUD()
-
 
 @bp.route('/time_zone', methods=["PUT"])
 @tokenAuth.login_required
 @admin_authorizer
 def edit_time_zone():
-    crud.update(TimeZone, {"id": 1}, request.json)
+    CRUD.update(TimeZone, {"id": 1}, request.json)
     return jsonify({"message": "Successfully updated the time zone", "status": 200}), 200
 
 
