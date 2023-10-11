@@ -10,8 +10,6 @@ from app import db
 from .aws_services import AmazonServices
 from app.models import User, remove_user_token
 
-crud = CRUD()
-
 
 def sent_email_invitation(first_name: str, last_name: str, to_email: str, auth_token: str) -> bool:
     """
@@ -32,14 +30,14 @@ def adding_new_user(data: dict) -> str:
     email_validation(data['email'])
     u = User.query.filter_by(email=data['email']).first()
     if not u:
-        u = crud.create(User, {'organization_id': g.user['organization_id'], **data})
+        u = CRUD.create(User, {'organization_id': g.user['organization_id'], **data})
     elif u.is_deleted or not u.is_active:
         pass
     elif u.registered:
         raise Conflict('The user has already registered')
     token = u.generate_auth_token()  # token expires after 12 hours
     sent_email_invitation(u.first_name, u.last_name, u.email, token)
-    crud.update(User, {'email': data['email']},
+    CRUD.update(User, {'email': data['email']},
                 {'is_active': True, 'registered': False, 'is_deleted': False, 'is_invited': True, **data})
     return token
 
@@ -68,7 +66,7 @@ def user_avatar_uploading(file_is: object = None):
         avatar = amazon.upload_user_profile_pic(file_is['file'], user_obj)
         if avatar:
             user_obj.avatar = avatar
-            crud.db_commit()
+            CRUD.db_commit()
             return avatar
         raise BadRequest()
     return True
@@ -78,14 +76,14 @@ def user_avatar_deleting():
     user_obj = User.query.filter_by(id=g.user['id'], organization_id=g.user['organization_id']).first()
     if user_obj.avatar:
         AmazonServices().delete_s3_object(path=f"{user_obj.organization_id}/avatar/{user_obj.avatar}")
-        crud.db_commit()
+        CRUD.db_commit()
     return True
 
 
 def edit_user_details(user_id: int, data: dict) -> bool:
     if data.get('role_id') and g.user['role_id'] != 2:
         raise Forbidden()
-    crud.update(User, {'id': user_id}, data)
+    CRUD.update(User, {'id': user_id}, data)
     return True
 
 
@@ -95,7 +93,7 @@ def make_user_active_inactive(user_id: int, is_active: bool) -> bool:
     user_obj = User.query.filter_by(id=user_id, organization_id=g.user['organization_id']).first()
     if is_active:
         user_obj.is_active = True
-        crud.db_commit()
+        CRUD.db_commit()
     else:
         remove_user_token(user_id)
     return True
@@ -108,6 +106,6 @@ def delete_organization_user(user_id):
     if u:
         remove_user_token(user_id)
         db.session.delete(u)
-        crud.db_commit()
+        CRUD.db_commit()
         return True
     raise NoContent()
