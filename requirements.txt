@@ -12,3 +12,5 @@ redis==5.0.1
 pytest==7.4.2
 itsdangerous==2.1.2
 boto3==1.28.62
+Flask_Compress==1.14
+flask-marshmallow==0.15.0

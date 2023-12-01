@@ -20,6 +20,7 @@ class User(BaseModel):
     # Credential
     email = db.Column(db.String(50), index=True, unique=True, nullable=False)
     hashed_password = db.Column(db.Text)
+
     # User information
     first_name = db.Column(db.String(60))
     last_name = db.Column(db.String(60))
