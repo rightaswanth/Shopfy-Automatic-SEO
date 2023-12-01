@@ -1,13 +1,13 @@
 import logging
 from logging.handlers import RotatingFileHandler
-
 import redis
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_migrate import Migrate
-
+from flask_compress import Compress
 from config import Config_is
+from flask_marshmallow import Marshmallow
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -17,18 +17,20 @@ redis_obj = redis.StrictRedis.from_url(Config_is.REDIS_URL, decode_responses=Tru
 app = None
 
 
-def create_app(config_class=Config):
+def create_app(config_class=Config_is):
     global app
     if app:
         return app
     app = Flask(__name__, template_folder='templates')
+    compress = Compress()
+    db.init_app(app)
+    migrate.init_app(app, db)
+    ma = Marshmallow(app)
     CORS(app)
+    compress.init_app(app)
     app.config.from_object(config_class)
     app.config['SQLALCHEMY_POOL_RECYCLE'] = 1200
     app.config['SQLALCHEMY_POOL_PRE_PING'] = True
-
-    db.init_app(app)
-    migrate.init_app(app, db)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_handler = RotatingFileHandler('log_data.log', maxBytes=10000, backupCount=2)
     file_handler.setFormatter(formatter)
