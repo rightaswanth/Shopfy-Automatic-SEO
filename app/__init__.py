@@ -22,8 +22,8 @@ def create_app(config_class=Config_is):
     if app:
         return app
     app = Flask(__name__, template_folder='templates')
-    compress = Compress()
     db.init_app(app)
+    compress = Compress()
     migrate.init_app(app, db)
     ma = Marshmallow(app)
     CORS(app)
