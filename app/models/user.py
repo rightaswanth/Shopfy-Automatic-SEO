@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, datetime
 import pytz
 import redis
 from flask_httpauth import HTTPBasicAuth
@@ -7,32 +7,54 @@ from itsdangerous import URLSafeTimedSerializer
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from app import db, redis_obj
-from .base import BaseModel
+from app.models.base import BaseModel
 from config import Config_is
 
 auth = HTTPBasicAuth()
 
 
 class User(BaseModel):
-    __tablename__ = 'user'
-    id = db.Column(db.Integer, primary_key=True)
+    """
+    User model for authentication and user management
+    """
+    __tablename__ = 'users'
 
-    # Credential
-    email = db.Column(db.String(50), index=True, unique=True, nullable=False)
-    hashed_password = db.Column(db.Text)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    registered = db.Column(db.Boolean, default=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organization.id'), nullable=True)
 
-    # User information
-    first_name = db.Column(db.String(60))
-    last_name = db.Column(db.String(60))
-    role_id = db.Column(db.Integer, default=3, index=True, nullable=False)
-    organization_id = db.Column(db.Integer, db.ForeignKey("organization.id", ondelete="CASCADE"), nullable=False)
-    avatar = db.Column(db.String(120))
-    # User state
-    is_invited = db.Column(db.Boolean, default=False)
-    registered = db.Column(db.Boolean, default=False)
+    def __init__(self, name, email, password=None, password_hash=None, organization_id=None):
+        self.name = name
+        self.email = email
+        self.organization_id = organization_id
+        if password:
+            self.set_password(password)
+        elif password_hash:
+            self.password_hash = password_hash
 
-    # Relationships
-    organization = db.relationship("Organization", viewonly=True, backref="user_in_organization", uselist=False)
+    def set_password(self, password):
+        """Hash and set the user's password"""
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        """Check if the provided password matches the stored hash"""
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self, tz: str = 'UTC'):
+        """Convert user object to dictionary"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'is_active': self.is_active,
+            'registered': self.registered,
+            'organization_id': self.organization_id,
+            'created_at': self.created_at.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(tz)).strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(tz)).strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
+        }
 
     def login_to_dict(self):
         """
@@ -40,62 +62,12 @@ class User(BaseModel):
         """
         data = dict(
             id=self.id,
-            first_name=self.first_name,
-            last_name=self.last_name,
+            name=self.name,
             email=self.email,
-            role_id=self.role_id,
-            organization={'id': self.organization_id, 'name': self.organization.name,
-                          'services': json.loads(self.organization.services)},
-            avatar=f"https://{Config_is.S3_BUCKET_NAME}.s3.us-east-1.amazonaws.com/{self.organization_id}/avatar/"
-                   f"{self.avatar}" if self.avatar else None,
+            organization_id=self.organization_id,
+            is_active=self.is_active
         )
         return data
-
-    def to_dict(self, tz: str):
-        """Convert table object to dictionary."""
-        data = dict(
-            id=self.id,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            email=self.email,
-            is_active=self.is_active,
-            is_invited=self.is_invited,
-            registered=self.registered,
-            role_id=self.role_id,
-            avatar=f"https://{Config_is.S3_BUCKET_NAME}.s3.us-east-1.amazonaws.com/{self.organization_id}/avatar/"
-                   f"{self.avatar}" if self.avatar else None,
-            updated_at=self.updated_at.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(tz)).strftime(
-                "%Y-%m-%d %H:%M:%S"),
-            created_at=self.created_at.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(tz)).strftime(
-                "%Y-%m-%d %H:%M:%S")
-        )
-        return data
-
-    def basic_to_dict(self):
-        data = dict(
-            id=self.id,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            avatar=f"https://{Config_is.S3_BUCKET_NAME}.s3.us-east-1.amazonaws.com/{self.organization_id}/avatar/"
-                   f"{self.avatar}" if self.avatar else None
-        )
-        return data
-
-    @staticmethod
-    def get_hashed_password(password: str):
-        """
-        Hash the password
-        """
-        return generate_password_hash(password)
-
-    def hash_password(self, password: str):
-        self.hashed_password = generate_password_hash(password)
-
-    def check_password(self, password: str):
-        """
-        Check password with the hashed password
-        """
-        return check_password_hash(self.hashed_password, password)
 
     def generate_auth_token(self, expiration: int = Config_is.AUTH_TOKEN_EXPIRES):
         """
@@ -103,7 +75,7 @@ class User(BaseModel):
         """
         s = URLSafeTimedSerializer(Config_is.SECRET_KEY)
         token = s.dumps(
-            {'id': self.id, 'name': self.name, 'role_id': self.role_id, 'email': self.email})
+            {'id': self.id, 'name': self.name, 'email': self.email})
         add_user_token_in_cache(self.id, expiration, token)
         return token
 

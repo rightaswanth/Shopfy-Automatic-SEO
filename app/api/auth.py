@@ -1,98 +1,158 @@
-"""API Endpoints related to user authentication."""
+"""Authentication module for API endpoints."""
 
-from flask import request, jsonify, g, render_template
-from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth
-
-from app.api import bp
-from app.services.custom_errors import (BadRequest, Unauthorized, InternalError, Forbidden)
-from app.services.sendgrid_email import send_email
+from flask import request, g, jsonify, Blueprint
+from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity, create_access_token
+from functools import wraps
+from app.models import User
+from app.services.custom_errors import Unauthorized, BadRequest
+from app.services.crud import CRUD
 from app.services.auth import AuthService
-from app.models import User, remove_user_token
-from config import Config_is
+from werkzeug.security import generate_password_hash
+from sqlalchemy import text
 
-auth = HTTPBasicAuth()
-tokenAuth = HTTPTokenAuth(scheme='Token')
-auth_service = AuthService()
+# Create a Blueprint for auth routes
+auth_bp = Blueprint('auth', __name__)
 
+class TokenAuth:
+    """Token authentication class for API endpoints."""
+    
+    def login_required(self, f):
+        """Decorator to require JWT token authentication."""
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            verify_jwt_in_request()
+            user_id = get_jwt_identity()
+            # Use CRUD to get user
+            user = User.query.get(user_id)
+            if not user:
+                raise Unauthorized("User not found")
+            g.current_user = user
+            return f(*args, **kwargs)
+        return decorated_function
 
-@auth.verify_password
-def verify_password(email: str, password: str) -> bool:
-    """Verify user email and password in login
-       :param email: email address string entered by user in login
-       :param password: String password entered by user during login
-       :return: True matched email and password
-       """
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        raise BadRequest("Incorrect Email")
-    if not user.is_active:
-        raise Forbidden('Your account has been suspended')
-    if not user.registered:
-        raise Unauthorized("Please register first and try again")
-    if user.check_password(password):
-        g.user = user
-        return True
-    else:
-        raise BadRequest('Wrong password')
+# Create a singleton instance
+tokenAuth = TokenAuth()
 
+# Create a token_required decorator for backward compatibility
+def token_required(f):
+    """Decorator to require JWT token authentication."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        verify_jwt_in_request()
+        user_id = get_jwt_identity()
+        # Use CRUD to get user
+        user = User.query.get(user_id)
+        if not user:
+            raise Unauthorized("User not found")
+        g.current_user = user
+        return f(user, *args, **kwargs)
+    return decorated_function
 
-@tokenAuth.verify_token
-def verify_token(token: str) -> bool:
-    if not token:
-        token = str(request.headers.get('Authorization', ''))
-    token = token.split('Token ')[-1]
-    if token:
-        user_is = User.verify_auth_token(token)
-        if user_is:
-            g.user = user_is
-            return True
-    raise Unauthorized()
+# Add authentication routes
+@auth_bp.route('/register', methods=['POST'])
+def register():
+    """Register a new user."""
+    data = request.get_json()
+    
+    # Validate required fields
+    required_fields = ['name', 'email', 'password']
+    for field in required_fields:
+        if not data or not data.get(field):
+            return jsonify({"message": f"Missing required field: {field}"}), 400
+    
+    # Check if user already exists using raw SQL
+    from app import db
+    result = db.session.execute(text("SELECT id FROM users WHERE email = :email"), {"email": data.get('email')})
+    if result.first():
+        return jsonify({"message": "Email already registered"}), 409
+    
+    # Create new user
+    user_data = {
+        'name': data.get('name'),
+        'email': data.get('email'),
+        'password': data.get('password'),
+        'is_active': True,
+        'registered': True
+    }
+    
+    try:
+        new_user = User(
+            name=user_data['name'],
+            email=user_data['email'],
+            password=user_data['password']
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        
+        # Generate access token
+        access_token = create_access_token(identity=new_user.id)
+        
+        return jsonify({
+            "message": "User registered successfully",
+            "access_token": access_token,
+            "user": {
+                "id": new_user.id,
+                "name": new_user.name,
+                "email": new_user.email
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Error registering user: {str(e)}"}), 400
 
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    """Login endpoint to authenticate users."""
+    data = request.get_json()
+    if not data or not data.get('email') or not data.get('password'):
+        return jsonify({"message": "Missing email or password"}), 400
+    
+    # Use CRUD to find user
+    user = User.query.filter_by(email=data.get('email')).first()
+    if not user or not user.check_password(data.get('password')):
+        return jsonify({"message": "Invalid email or password"}), 401
+    
+    access_token = create_access_token(identity=user.id)
+    return jsonify({
+        "access_token": access_token,
+        "user": user.to_dict()
+    }), 200
 
-@bp.route('/auth/login', methods=['POST'])
-def login_user():
-    """
-    Login to the application with email address and password in
-    """
-    verify_password(request.json.get('email', ' ').lower().strip(), request.json.get('password', ' ').strip())
-    token = g.user.generate_auth_token()
-    return jsonify({'data': g.user.login_to_dict(), 'auth_token': token, 'status': 200}), 200
+@auth_bp.route('/refresh', methods=['POST'])
+@tokenAuth.login_required
+def refresh():
+    """Refresh token endpoint."""
+    current_user_id = get_jwt_identity()
+    access_token = create_access_token(identity=current_user_id)
+    return jsonify({"access_token": access_token}), 200
 
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    """Request a password reset token."""
+    data = request.get_json()
+    if not data or not data.get('email'):
+        return jsonify({"message": "Missing email"}), 400
+    
+    try:
+        name, token = AuthService.forgot_password(data.get('email'))
+        # In a real application, you would send this token via email
+        # For development, we'll return it in the response
+        return jsonify({
+            "message": "Password reset token generated",
+            "token": token
+        }), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 400
 
-@bp.route('/auth/forgot_password', methods=['POST'])
-def forgot_password_req():
-    """
-        Input email address to if forgot the password and reset password link will be sent in email
-        """
-    name, token = auth_service.forgot_password(request.json.get('email', '').strip().lower())
-    password_reset_form = render_template("reset_template.html", name=name,
-                                          reset_url=f"{Config_is.FRONT_END_PASSWORD_RESET_URL}/{token}",
-                                          unsubscribe_url=Config_is.UNSUBSCRIBE_LINK)
-    send_an_email = send_email(to_email=request.json.get('email').lower(), html_content=password_reset_form,
-                               subject='Aria Leads Reset Password')
-    if send_an_email:
-        return jsonify({'message': 'Please check your inbox', 'status': 200}), 200
-    raise InternalError()
-
-
-@bp.route('/auth/reset_password', methods=['PATCH'])
-def reset_password_req():
-    if len(request.json.get('new_password', '')) < 5:
-        raise BadRequest('Password length is short. Please try another password')
-    if request.json.get('new_password') != request.json.pop('confirm_password', None):
-        raise BadRequest('Enter the password correctly.')
-    if auth_service.new_password(g.user['id'], request.json['new_password']):
-        return jsonify({'message': 'Password has been changed successfully', 'status': 200}), 200
-    return InternalError()
-
-
-@bp.route('/auth/logout', methods=['GET'])
-@tokenAuth.login_required()
-def logout():
-    remove_user_token(g.user['id'], request.headers.get('Authorization', '').replace('Token ', '').strip())
-    return jsonify({'message': 'Success', 'status': 200}), 200
-
-
-@bp.route('/test')
-def test_api():
-    return jsonify({'message': 'Success', 'status': 200}), 200
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Reset password using a token."""
+    data = request.get_json()
+    if not data or not data.get('token') or not data.get('password'):
+        return jsonify({"message": "Missing token or password"}), 400
+    
+    try:
+        AuthService.reset_password(data.get('token'), data.get('password'))
+        return jsonify({"message": "Password reset successfully"}), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 400 
