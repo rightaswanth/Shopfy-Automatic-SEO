@@ -13,7 +13,6 @@ class Organization(BaseModel):
     name = db.Column(db.String(120), nullable=False, unique=True)
     domain = db.Column(db.String(40), nullable=False, unique=True, index=True)
     services = db.Column(db.Text, default=json.dumps([]))
-    members = db.relationship("User", backref="organization_users", lazy=True)
 
     def to_dict(self):
         """Convert table object to dictionary."""
