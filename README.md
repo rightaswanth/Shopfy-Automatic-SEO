@@ -1,0 +1,1 @@
+# Shopfy-Automatic-SEO
