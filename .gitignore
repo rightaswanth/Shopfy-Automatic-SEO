@@ -172,3 +172,25 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+# Mac custom attributes file (Desktop Service Store)
+.DS_Store
+
+# PyCharm files
+.idea/
+
+# Instance Folder - used for configuration parameters
+instance/*_full.py
+instance/*.db
+
+# Coverage output
+.coverage
+
+# Virtual Environment
+/venv/
+/myenv/
+
+# pytest files
+.pytest_cache/
+
+# Log files
+*.log
