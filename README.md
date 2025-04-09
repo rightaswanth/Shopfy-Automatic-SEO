@@ -27,7 +27,7 @@ This Flask-based middleware project automatically manages and optimizes SEO meta
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/seo-manager-flask.git
+git clone https://github.com/rightaswanth/Shopfy-Automatic-SEO.git
 cd seo-manager-flask
 #Flask boiler plate
 
